@@ -1,101 +1,114 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import "./App.css";
 import Navbar from "./components/Navbar";
 import Dashboard from "./components/Dashboard";
+import {
+  apiAddGoal,
+  apiGetGoals,
+  apiEditGoal,
+  apiDeleteGoal,
+  apiGetSummary,
+} from "./api";
 
+// PUBLIC_INTERFACE
 /**
  * Application root component.
- * Holds in-memory learning goal CRUD logic, theme switching, and top-level layout.
+ * Handles global theme switching, data fetching/mutation from backend API, and top-level error and loading logic.
  *
- * (In a real full-stack scenario, would use API with useEffect/fetch)
+ * All learning goal operations (CRUD, filter, progress summary) are performed via backend API.
+ * See src/api.js for endpoint details.
  */
-// PUBLIC_INTERFACE
 function App() {
-  // Load from localStorage as fake "backend"
-  const loadGoals = () => {
-    try {
-      const str = window.localStorage.getItem("learning-goals");
-      if (!str) return [];
-      return JSON.parse(str);
-    } catch {
-      return [];
-    }
-  };
-  // Save to localStorage
-  const saveGoals = (data) => {
-    window.localStorage.setItem("learning-goals", JSON.stringify(data));
-  };
-
+  // Theme preference: store in localStorage, not synced with backend
   const [theme, setTheme] = useState(() => {
-    // Try to persist theme preference
     const saved = window.localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") return saved;
     return "light";
   });
-  const [goals, setGoals] = useState(loadGoals());
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState({ status: "", category: "" });
 
-  // Effect to apply theme to document element and persist
+  // State for learning goals, progress summary, loading UI, error
+  const [goals, setGoals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState(null);
+  const [filters, setFilters] = useState({ status: "", category: "" });
+  const [error, setError] = useState("");
+
+  // Effect: Apply theme variable to root + persist
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     window.localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // Sync localStorage for goals on changes
-  useEffect(() => {
-    saveGoals(goals);
-  }, [goals]);
-
-  // Add a new goal
   // PUBLIC_INTERFACE
-  const addGoal = (goal) => {
-    setGoals((gs) => [...gs, goal]);
-  };
-
-  // Edit/update a goal by id
-  // PUBLIC_INTERFACE
-  const editGoal = (goal) => {
-    setGoals((gs) =>
-      gs.map((g) => (g.id === goal.id ? { ...g, ...goal } : g))
-    );
-  };
-
-  // Delete a goal by id
-  // PUBLIC_INTERFACE
-  const deleteGoal = (id) => {
-    if (window.confirm("Delete this goal? This action cannot be undone.")) {
-      setGoals((gs) => gs.filter((g) => g.id !== id));
-    }
-  };
-
-  // On first load, insert a sample if empty
-  useEffect(() => {
-    if (goals.length === 0) {
-      setGoals([
-        {
-          id: "demo1",
-          topicName: "Learn React Basics",
-          status: "In Progress",
-          targetDate: "2024-06-25",
-          notes: "Finish main docs and build a demo app.",
-          category: "Programming"
-        },
-        {
-          id: "demo2",
-          topicName: "Read UI/UX Book",
-          status: "Not Started",
-          targetDate: "2024-07-05",
-          notes: "",
-          category: "Design"
-        }
+  /** Fetch goals (optionally with filters) and sync state */
+  const fetchGoalsAndSummary = useCallback(async (activeFilters = filters) => {
+    setLoading(true);
+    setError("");
+    try {
+      // Fetch goals with filters (status, category), and summary
+      const [goalsList, summaryRes] = await Promise.all([
+        apiGetGoals(activeFilters),
+        apiGetSummary(),
       ]);
+      setGoals(goalsList);
+      setSummary(summaryRes);
+    } catch (err) {
+      setError(`Failed to fetch goals: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-    // eslint-disable-next-line
-    // (No dependency warning on purpose)
-  }, []);
+  }, [filters]);
+
+  // On mount and on filter change: fetch backend data
+  useEffect(() => {
+    fetchGoalsAndSummary(filters);
+  }, [fetchGoalsAndSummary, filters]);
 
   // PUBLIC_INTERFACE
+  /** Add a new goal via backend API */
+  const addGoal = async (goal) => {
+    setLoading(true);
+    setError("");
+    try {
+      await apiAddGoal(goal);
+      // Refetch goals after successful addition
+      await fetchGoalsAndSummary();
+    } catch (err) {
+      setError(`Failed to add goal: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  // PUBLIC_INTERFACE
+  /** Update goal via backend API */
+  const editGoal = async (goal) => {
+    setLoading(true);
+    setError("");
+    try {
+      await apiEditGoal(goal);
+      await fetchGoalsAndSummary();
+    } catch (err) {
+      setError(`Failed to edit goal: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  // PUBLIC_INTERFACE
+  /** Delete a goal by id via backend API */
+  const deleteGoal = async (id) => {
+    if (!window.confirm("Delete this goal? This action cannot be undone.")) return;
+    setLoading(true);
+    setError("");
+    try {
+      await apiDeleteGoal(id);
+      await fetchGoalsAndSummary();
+    } catch (err) {
+      setError(`Failed to delete goal: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  // Theme toggle: light/dark
   const toggleTheme = () => {
     setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
   };
@@ -103,6 +116,23 @@ function App() {
   return (
     <div className="App">
       <Navbar onToggleTheme={toggleTheme} theme={theme} />
+      {error && (
+        <div
+          style={{
+            background: "#ffe1e1",
+            color: "#af2237",
+            padding: "8px 11px",
+            borderRadius: 7,
+            margin: "1.5rem auto -1rem",
+            fontWeight: 600,
+            maxWidth: "690px",
+            letterSpacing: "0.01em",
+            border: "1.1px solid #e53935",
+          }}
+        >
+          {error}
+        </div>
+      )}
       <Dashboard
         goals={goals}
         filters={filters}
@@ -111,6 +141,7 @@ function App() {
         onEdit={editGoal}
         onDelete={deleteGoal}
         loading={loading}
+        summary={summary}
       />
       <footer
         style={{
@@ -130,7 +161,7 @@ function App() {
           Made with React
         </a>
         <span style={{ margin: "0 8px" }}>&middot;</span>
-        <span>Personal Learning Tracker Demo</span>
+        <span>Personal Learning Tracker</span>
       </footer>
     </div>
   );

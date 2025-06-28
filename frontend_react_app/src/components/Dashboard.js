@@ -9,13 +9,14 @@ import AddEditGoalForm from "./AddEditGoalForm";
  * Dashboard component combines summaries, filter, goals list, and handles add/edit modal.
  *
  * Props:
- * - goals: array of goal objects
+ * - goals: array of goal objects (from backend API)
  * - filters: { status, category }
  * - setFilters: function to update filters
- * - onAdd: handler to add goal
- * - onEdit: handler to update goal
- * - onDelete: handler to delete goal
- * - loading: boolean
+ * - onAdd: handler to add goal (calls backend)
+ * - onEdit: handler to update goal (calls backend)
+ * - onDelete: handler to delete goal (calls backend)
+ * - loading: boolean (API loading state)
+ * - summary: progress summary (from backend /api/summary), optional
  */
 function Dashboard({
   goals,
@@ -24,12 +25,13 @@ function Dashboard({
   onAdd,
   onEdit,
   onDelete,
-  loading
+  loading,
+  summary, // now supplied by backend
 }) {
   const [showForm, setShowForm] = useState(false);
   const [editingGoal, setEditingGoal] = useState(null);
 
-  // Filter goals as per filters prop
+  // Filter goals as per filters prop (already filtered in backend in real API scenario, but kept for client safety)
   const filteredGoals = goals.filter((g) => {
     const matchStatus =
       !filters.status || g.status.toLowerCase() === filters.status.toLowerCase();
@@ -43,26 +45,6 @@ function Dashboard({
   const uniqueCategories = Array.from(
     new Set(goals.map((g) => (g.category || "").trim()).filter(Boolean))
   );
-
-  // Progress: completed/in progress/not started
-  const summary = (() => {
-    const total = goals.length;
-    let completed = 0,
-      inProgress = 0,
-      notStarted = 0;
-    for (const g of goals) {
-      if ((g.status || "").toLowerCase() === "completed") completed++;
-      else if ((g.status || "").toLowerCase() === "in progress") inProgress++;
-      else notStarted++;
-    }
-    return {
-      total,
-      completed,
-      inProgress,
-      notStarted,
-      percentComplete: total ? Math.round((completed / total) * 100) : 0,
-    };
-  })();
 
   // Open modal for Add or Edit
   const openAddModal = () => {
